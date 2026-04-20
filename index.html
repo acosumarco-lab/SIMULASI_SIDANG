@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Heart Monitor — Medical IoT</title>
+    <meta name="description"
+        content="Real-time heart rate monitoring with semi-fragile watermark verification for secure medical IoT data integrity.">
+
+    <!-- Google Fonts: Plus Jakarta Sans + JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+        rel="stylesheet">
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <!-- MQTT.js -->
+    <script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
+    <!-- js-sha256 -->
+    <script src="https://cdn.jsdelivr.net/npm/js-sha256@0.11.0/src/sha256.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- SheetJS (xlsx) for Excel export -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- ===== HEADER ===== -->
+    <header id="app-header">
+        <div class="header-content">
+            <div class="header-left">
+                <div class="logo-icon" id="logoIcon">
+                    <i data-lucide="activity" style="width:24px;height:24px;color:currentColor;stroke-width:2.5"></i>
+                </div>
+                <div>
+                    <h1>Secure Heart Monitor</h1>
+                    <p class="header-sub">Watermark Verification System</p>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="mqtt-badge" id="mqttBadge">
+                    <span class="mqtt-dot"></span>
+                    <span class="mqtt-text">Connecting...</span>
+                </div>
+                <div class="clock" id="clock">--:--:--</div>
+            </div>
+        </div>
+    </header>
+
+    <!-- ===== MAIN ===== -->
+    <main id="app-main">
+
+        <!-- ROW 1: Stats Cards (5 kolom: BPM, Rata-rata, Packets, Latency, Computation Time) -->
+        <div class="stats-row" id="statsRow">
+            <div class="stat-card" id="statBPM">
+                <div class="stat-icon bpm-icon">
+                    <i data-lucide="heart-pulse"></i>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-label">Live BPM</span>
+                    <span class="stat-value" id="bpmValue">--</span>
+                </div>
+                <div class="stat-trend" id="bpmZone">
+                    <span class="zone-badge">—</span>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon avg-icon">
+                    <i data-lucide="activity-square"></i>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-label">Rata-rata</span>
+                    <span class="stat-value" id="avgValue">--</span>
+                </div>
+                <div class="stat-sub">
+                    <span id="minValue">Min: --</span>
+                    <span id="maxValue">Max: --</span>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon pkt-icon">
+                    <i data-lucide="server"></i>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-label">Packets</span>
+                    <span class="stat-value" id="packetCount">0</span>
+                </div>
+                <div class="stat-sub">
+                    <span id="blockCount">Blocks: 0</span>
+                    <span id="throughputValue">0.00 KB/s</span>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon time-icon">
+                    <i data-lucide="clock"></i>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-label">Latency</span>
+                    <span class="stat-value" id="latencyValue">--</span>
+                </div>
+                <div class="stat-sub">
+                    <span id="lastBlockTime">Blok terakhir: --</span>
+                </div>
+                <small
+                    style="display:block; text-align:center; opacity:0.8; font-size:11px; padding-top:4px; font-family:'Plus Jakarta Sans', sans-serif; width:100%; font-weight:700;">End-to-end
+                    per blok</small>
+            </div>
+
+            <!-- BARU: Stat Card Computation Time -->
+            <div class="stat-card" id="statComp">
+                <div class="stat-icon comp-icon">
+                    <i data-lucide="cpu"></i>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-label">Komputasi ESP32</span>
+                    <span class="stat-value" id="compValue">-- ms</span>
+                </div>
+                <div class="stat-sub">
+                    <span id="compAvg">Avg: --</span>
+                    <span id="compMax">Max: --</span>
+                </div>
+                <small
+                    style="display:block; text-align:center; opacity:0.8; font-size:11px; padding-top:4px; font-family:'Plus Jakarta Sans', sans-serif; width:100%; font-weight:700;">Pembuatan
+                    watermark di ESP32</small>
+            </div>
+        </div>
+
+        <!-- ROW 2: Chart + Watermark Status -->
+        <div class="main-grid">
+            <!-- Chart -->
+            <section class="card" id="chartCard">
+                <div class="card-head">
+                    <h2><i data-lucide="line-chart" class="h2-icon"></i> Buffer Time Monitor</h2>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span class="badge-sm" id="dpCount">0 pts</span>
+                    </div>
+                </div>
+                <div class="chart-wrap">
+                    <canvas id="bpmChart"></canvas>
+                </div>
+            </section>
+
+            <!-- Watermark Status -->
+            <section class="card" id="wmCard">
+                <div class="card-head">
+                    <h2><i data-lucide="shield" class="h2-icon"></i> Watermark Status</h2>
+                </div>
+                <div class="wm-body">
+                    <div class="wm-hero" id="wmHero">
+                        <div class="wm-icon" id="wmIcon"><i data-lucide="shield" style="width:48px;height:48px;"></i>
+                        </div>
+                        <div class="wm-status-text" id="wmStatusText">WAITING</div>
+                    </div>
+
+                    <div class="wm-metrics">
+                        <div class="wm-metric">
+                            <span class="wm-metric-label">BER</span>
+                            <span class="wm-metric-val" id="mBER">— %</span>
+                        </div>
+                        <div class="wm-metric">
+                            <span class="wm-metric-label">PSNR</span>
+                            <span class="wm-metric-val" id="mPSNR">— dB</span>
+                        </div>
+                        <div class="wm-metric">
+                            <span class="wm-metric-label">MSE</span>
+                            <span class="wm-metric-val" id="mMSE">—</span>
+                        </div>
+                        <div class="wm-metric">
+                            <span class="wm-metric-label">SEQ</span>
+                            <span class="wm-metric-val" id="mSEQ">#—</span>
+                        </div>
+                    </div>
+
+                    <div class="wm-divider"></div>
+
+                    <!-- Integrity Score -->
+                    <div class="integrity-section">
+                        <div class="integrity-header">
+                            <span>Integrity Score</span>
+                            <span class="integrity-pct" id="integrityPct">—%</span>
+                        </div>
+                        <div class="integrity-bar">
+                            <div class="integrity-fill" id="integrityFill" style="width: 0%"></div>
+                        </div>
+                        <div class="integrity-detail">
+                            <span id="validBlocks"><i data-lucide="check-circle-2" class="inline-icon"></i> 0
+                                valid</span>
+                            <span id="invalidBlocks"><i data-lucide="x-circle" class="inline-icon"></i> 0 invalid</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- ROW 3: Grafik Perbandingan (Raw vs Watermarked) — Full Width -->
+        <section class="card" id="compareCard">
+            <div class="card-head">
+                <h2><i data-lucide="git-compare" class="h2-icon"></i> Perbandingan: Raw vs Watermarked</h2>
+            </div>
+            <div class="chart-wrap chart-compare">
+                <canvas id="compareChart"></canvas>
+            </div>
+            <div class="compare-metrics" id="compareMetrics">
+                <span>MSE: —</span>
+                <span>PSNR: — dB</span>
+                <span>Max Error: —</span>
+            </div>
+        </section>
+
+        <!-- ROW 3b: History Tables (2 kolom) -->
+        <div class="table-grid">
+            <!-- Tabel 1: History Verifikasi Blok -->
+            <section class="card">
+                <div class="card-head">
+                    <h2><i data-lucide="history" class="h2-icon"></i> History Verifikasi Blok</h2>
+                    <div class="log-actions">
+                        <span class="badge-sm" id="blockHistCount">0 blok</span>
+                        <button class="btn-text" id="btnDownloadBlockCSV" title="Download Block History (CSV)"><i
+                                data-lucide="download"
+                                style="width:16px;height:16px;vertical-align:text-bottom;margin-right:4px;"></i>
+                            Export</button>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table class="history-table" id="blockHistTable">
+                        <thead>
+                            <tr>
+                                <th>Blok</th>
+                                <th>Waktu</th>
+                                <th>Status</th>
+                                <th>Mode</th>
+                                <th>WM Expected</th>
+                                <th>WM Extracted</th>
+                                <th>BER (%)</th>
+                                <th>PSNR (dB)</th>
+                                <th>MSE</th>
+                                <th>Keterangan</th>
+                            </tr>
+                        </thead>
+                        <tbody id="blockHistBody">
+                            <tr class="empty-row">
+                                <td colspan="10">Belum ada data — menunggu blok secure...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Tabel 2: History Perbandingan Raw vs Watermarked -->
+            <section class="card">
+                <div class="card-head">
+                    <h2><i data-lucide="database" class="h2-icon"></i> History Data Raw vs Watermarked</h2>
+                    <div class="log-actions">
+                        <span class="badge-sm" id="dataHistCount">0 blok</span>
+                        <button class="btn-text" id="btnDownloadCSV" title="Download Data History (CSV)"><i
+                                data-lucide="download"
+                                style="width:16px;height:16px;vertical-align:text-bottom;margin-right:4px;"></i>
+                            Export</button>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table class="history-table" id="dataHistTable">
+                        <thead>
+                            <tr>
+                                <th>Blok</th>
+                                <th>S#</th>
+                                <th>Waktu</th>
+                                <th>Raw</th>
+                                <th>Watermarked</th>
+                                <th>Selisih</th>
+                                <th>Mode</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dataHistBody">
+                            <tr class="empty-row">
+                                <td colspan="6">Belum ada data — menunggu blok secure...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <!-- ROW 4: Simulation Panel (Full Width) -->
+        <section class="card" id="simCard">
+            <div class="card-head">
+                <h2><i data-lucide="swords" class="h2-icon"></i> Simulasi Serangan</h2>
+                <span class="badge-sm mode-badge" id="modeBadge">NORMAL</span>
+            </div>
+        <div class="sim-body sim-row">
+                <label class="sim-opt active">
+                    <input type="radio" name="attackMode" value="NORMAL" checked>
+                    <div class="sim-opt-inner">
+                        <div>
+                            <strong>Normal</strong>
+                            <small>Data asli tanpa modifikasi</small>
+                        </div>
+                    </div>
+                </label>
+                <label class="sim-opt">
+                    <input type="radio" name="attackMode" value="SYM_COMP_05">
+                    <div class="sim-opt-inner">
+                        <div>
+                            <strong>Kompresi Simetris (±0.5)</strong>
+                            <small>Ringan, cA statis</small>
+                        </div>
+                    </div>
+                </label>
+                <label class="sim-opt">
+                    <input type="radio" name="attackMode" value="SYM_COMP_10">
+                    <div class="sim-opt-inner">
+                        <div>
+                            <strong>Kompresi Simetris (±1.0)</strong>
+                            <small>Sedang, cA statis</small>
+                        </div>
+                    </div>
+                </label>
+                <label class="sim-opt">
+                    <input type="radio" name="attackMode" value="SYM_COMP_20">
+                    <div class="sim-opt-inner">
+                        <div>
+                            <strong>Kompresi Simetris (±2.0)</strong>
+                            <small>Berat, cA statis</small>
+                        </div>
+                    </div>
+                </label>
+                <label class="sim-opt">
+                    <input type="radio" name="attackMode" value="AWGN_VAR_001">
+                    <div class="sim-opt-inner">
+                        <div>
+                            <strong>AWGN (Var=0.01)</strong>
+                            <small>Noise ringan, σ≈0.1</small>
+                        </div>
+                    </div>
+                </label>
+                <label class="sim-opt">
+                    <input type="radio" name="attackMode" value="AWGN_VAR_1">
+                    <div class="sim-opt-inner">
+                        <div>
+                            <strong>AWGN (Var=1)</strong>
+                            <small>Noise sedang, σ=1.0</small>
+                        </div>
+                    </div>
+                </label>
+                <label class="sim-opt">
+                    <input type="radio" name="attackMode" value="AWGN_VAR_10">
+                    <div class="sim-opt-inner">
+                        <div>
+                            <strong>AWGN (Var=10)</strong>
+                            <small>Noise berat, σ≈3.16</small>
+                        </div>
+                    </div>
+                </label>
+                <label class="sim-opt">
+                    <input type="radio" name="attackMode" value="COMPRESS_Q50">
+                    <div class="sim-opt-inner">
+                        <div>
+                            <strong>Kompresi Q=50</strong>
+                            <small>Lossy ringan (step=4)</small>
+                        </div>
+                    </div>
+                </label>
+                <label class="sim-opt">
+                    <input type="radio" name="attackMode" value="COMPRESS_Q30">
+                    <div class="sim-opt-inner">
+                        <div>
+                            <strong>Kompresi Q=30</strong>
+                            <small>Lossy sedang (step=7)</small>
+                        </div>
+                    </div>
+                </label>
+                <label class="sim-opt">
+                    <input type="radio" name="attackMode" value="COMPRESS_Q10">
+                    <div class="sim-opt-inner">
+                        <div>
+                            <strong>Kompresi Q=10</strong>
+                            <small>Lossy berat (step=20)</small>
+                        </div>
+                    </div>
+                </label>
+                <label class="sim-opt">
+                    <input type="radio" name="attackMode" value="ATTACK_BPM">
+                    <div class="sim-opt-inner">
+                        <div>
+                            <strong>Attack BPM (+30)</strong>
+                            <small>Manipulasi konstan (+30)</small>
+                        </div>
+                    </div>
+                </label>
+                <label class="sim-opt">
+                    <input type="radio" name="attackMode" value="ATTACK_BPM_LINEAR">
+                    <div class="sim-opt-inner">
+                        <div>
+                            <strong>Attack BPM (Linear)</strong>
+                            <small>Tertambah +5, +10, dst</small>
+                        </div>
+                    </div>
+                </label>
+                <label class="sim-opt">
+                    <input type="radio" name="attackMode" value="ATTACK_KEY">
+                    <div class="sim-opt-inner">
+                        <div>
+                            <strong>Attack Key (Palsu)</strong>
+                            <small>Verifikasi dengan kunci salah</small>
+                        </div>
+                    </div>
+                </label>
+                <label class="sim-opt">
+                    <input type="radio" name="attackMode" value="DELTA_LOSSLESS_O1">
+                    <div class="sim-opt-inner">
+                        <div>
+                            <strong>Delta Lossless (Orde 1)</strong>
+                            <small>Δ+Zigzag+Varint → Decompress</small>
+                        </div>
+                    </div>
+                </label>
+                <label class="sim-opt">
+                    <input type="radio" name="attackMode" value="DELTA_LOSSLESS_O2">
+                    <div class="sim-opt-inner">
+                        <div>
+                            <strong>Delta Lossless (Orde 2)</strong>
+                            <small>Δ²+Zigzag+Varint → Decompress</small>
+                        </div>
+                    </div>
+                </label>
+                <label class="sim-opt">
+                    <input type="radio" name="attackMode" value="DELTA_CORRUPT">
+                    <div class="sim-opt-inner">
+                        <div>
+                            <strong>Delta Corrupt (Kanal)</strong>
+                            <small>Lossless + 2 byte rusak</small>
+                        </div>
+                    </div>
+                </label>
+            </div>
+        </section>
+
+        <!-- ROW 5: Alert + Log -->
+        <div class="alert-bar" id="alertBar" style="display:none;">
+            <span class="alert-icon"><i data-lucide="bell"></i></span>
+            <span class="alert-msg" id="alertMsg"></span>
+            <button class="alert-close" id="alertClose"><i data-lucide="x" style="width:16px;height:16px;"></i></button>
+        </div>
+
+        <section class="card" id="logCard">
+            <div class="card-head">
+                <h2><i data-lucide="terminal-square" class="h2-icon"></i> Log Proses</h2>
+                <div class="log-actions">
+                    <label class="auto-scroll-toggle">
+                        <input type="checkbox" id="autoScrollToggle" checked>
+                        <span>Auto-scroll</span>
+                    </label>
+                    <button class="btn-text" id="btnDownloadThroughput" title="Download Throughput Stats (XLSX)"><i
+                            data-lucide="bar-chart-3"
+                            style="width:16px;height:16px;vertical-align:text-bottom;margin-right:4px;"></i>
+                        Export Throughput</button>
+                    <button class="btn-text" id="btnDownloadLog" title="Download Log Proses (TXT)"><i
+                            data-lucide="download"
+                            style="width:16px;height:16px;vertical-align:text-bottom;margin-right:4px;"></i>
+                        Export Log</button>
+                    <button class="btn-text" id="btnClear">Clear</button>
+                </div>
+            </div>
+            <div class="log-wrap" id="logWrap">
+                <pre id="logArea">Menunggu data dari ESP32...\n</pre>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ===== FOOTER ===== -->
+    <footer>
+        <p>Syauqii Usaiyyah — Tugas Akhir — Politeknik Negeri Bandung</p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
