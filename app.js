@@ -91,7 +91,7 @@ let compStats = {
 
 // Variabel Pengukuran Throughput
 let throughputBytes = 0;
-let throughputHistory = [];          // Array untuk menyimpan riwayat KB/s per detik
+let packetHistory = [];              // Array untuk riwayat paket masuk (event-driven)
 
 // ===================================================================================
 // BAGIAN 3: DOM REFERENCES
@@ -143,7 +143,7 @@ const dom = {
     dataHistBody: $('dataHistBody'),     // Tbody tabel history data
     dataHistCount: $('dataHistCount'),   // Badge counter data
     btnDownloadCSV: $('btnDownloadCSV'), // Tombol export CSV
-    btnDownloadThroughput: $('btnDownloadThroughput'), // Tombol export Throughput
+    btnDownloadThroughput: $('btnDownloadThroughput'), // Tombol export Paket Log
     btnDownloadLog: $('btnDownloadLog'), // Tombol export Log
 
     // Alert
@@ -1312,13 +1312,25 @@ function connectMQTT() {
     mqttClient.on('reconnect', () => setMQTT(''));
 
     // Event: menerima pesan MQTT
-    mqttClient.on('message', (topic, msg) => {
+    mqttClient.on('message', (topic, payload) => {
         // --- Hitung jumlah Byte untuk Throughput ---
-        throughputBytes += msg.length;
+        const payloadString = payload.toString();
+        throughputBytes += payload.length;
+
+        const p = JSON.parse(payloadString);
+        
+        // Catat ke paket history untuk export (dengan ms precision)
+        const nowMs = new Date();
+        const timeStr = `${nowMs.toLocaleTimeString('id-ID', { hour12: false })}.${nowMs.getMilliseconds().toString().padStart(3, '0')}`;
+        packetHistory.push({
+            time: timeStr,
+            type: p.type || 'unknown',
+            sizeBytes: payload.length
+        });
+        // Batasi memori agar tidak jebol (max 100.000 paket)
+        if (packetHistory.length > 100000) packetHistory.shift();
 
         try {
-            const p = JSON.parse(msg.toString());  // Parse JSON dari payload
-
             if (p.type === 'live') {
                 // Paket live: update grafik dan BPM
                 updateLiveBPM(p.val || 0);
@@ -1409,23 +1421,31 @@ function initEvents() {
         });
     }
 
-    // --- Tombol Export Throughput Excel (.xlsx) ---
+    // --- Tombol Export Packet Log Excel (.xlsx) ---
     if (dom.btnDownloadThroughput) {
         dom.btnDownloadThroughput.addEventListener('click', () => {
-            if (throughputHistory.length === 0) {
-                showAlert('Tidak ada data throughput yang bisa diunduh!', 'warning');
+            if (packetHistory.length === 0) {
+                showAlert('Tidak ada data paket yang bisa diunduh!', 'warning');
                 return;
             }
 
-            const data = [['Timestamp', 'Throughput (KB/s)']];
-            throughputHistory.forEach(entry => {
-                data.push([entry.time, parseFloat(entry.kbps.toFixed(3))]);
+            const data = [['Waktu Datang', 'Tipe Paket', 'Ukuran (Bytes)']];
+            packetHistory.forEach(entry => {
+                data.push([entry.time, entry.type, entry.sizeBytes]);
             });
 
             const wb = XLSX.utils.book_new();
             const ws = XLSX.utils.aoa_to_sheet(data);
-            XLSX.utils.book_append_sheet(wb, ws, 'Throughput Stats');
-            XLSX.writeFile(wb, `throughput_stats_${new Date().toISOString().slice(0, 10)}.xlsx`);
+            
+            // Auto-width kolom
+            ws['!cols'] = [
+                { wch: 15 }, // Waktu Datang
+                { wch: 15 }, // Tipe Paket
+                { wch: 15 }  // Ukuran (Bytes)
+            ];
+
+            XLSX.utils.book_append_sheet(wb, ws, 'Packet Log');
+            XLSX.writeFile(wb, `log_jaringan_${new Date().toISOString().slice(0, 10)}.xlsx`);
         });
     }
 
@@ -1533,11 +1553,6 @@ function initEvents() {
             // Data = byte/detik lalu ubah ke KB/s
             const kbps = (throughputBytes / 1024);
             dom.throughputValue.textContent = `${kbps.toFixed(2)} KB/s`;
-
-            // Simpan ke history untuk export (maksimal 3600 detik/1 jam)
-            const now = new Date().toLocaleTimeString('id-ID', { hour12: false });
-            throughputHistory.push({ time: now, kbps: kbps });
-            if (throughputHistory.length > 3600) throughputHistory.shift();
 
             throughputBytes = 0; // Reset di akhir detik
         }
