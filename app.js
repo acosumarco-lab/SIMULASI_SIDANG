@@ -89,8 +89,7 @@ let compStats = {
     max: 0,
 };
 
-// Variabel Pengukuran Throughput
-let throughputBytes = 0;
+
 let packetHistory = [];              // Array untuk riwayat paket masuk (event-driven)
 
 // ===================================================================================
@@ -113,7 +112,7 @@ const dom = {
     maxValue: $('maxValue'),         // Nilai BPM maksimum
     packetCount: $('packetCount'),   // Counter paket
     blockCount: $('blockCount'),     // Counter blok
-    throughputValue: $('throughputValue'), // Nilai Throughput
+
     latencyValue: $('latencyValue'), // Nilai latency
     lastBlockTime: $('lastBlockTime'), // Waktu blok terakhir
     dpCount: $('dpCount'),           // Jumlah data point di grafik
@@ -143,7 +142,7 @@ const dom = {
     dataHistBody: $('dataHistBody'),     // Tbody tabel history data
     dataHistCount: $('dataHistCount'),   // Badge counter data
     btnDownloadCSV: $('btnDownloadCSV'), // Tombol export CSV
-    btnDownloadThroughput: $('btnDownloadThroughput'), // Tombol export Paket Log
+
     btnDownloadLog: $('btnDownloadLog'), // Tombol export Log
 
     // Alert
@@ -1313,9 +1312,7 @@ function connectMQTT() {
 
     // Event: menerima pesan MQTT
     mqttClient.on('message', (topic, payload) => {
-        // --- Hitung jumlah Byte untuk Throughput ---
         const payloadString = payload.toString();
-        throughputBytes += payload.length;
 
         const p = JSON.parse(payloadString);
         
@@ -1421,33 +1418,7 @@ function initEvents() {
         });
     }
 
-    // --- Tombol Export Packet Log Excel (.xlsx) ---
-    if (dom.btnDownloadThroughput) {
-        dom.btnDownloadThroughput.addEventListener('click', () => {
-            if (packetHistory.length === 0) {
-                showAlert('Tidak ada data paket yang bisa diunduh!', 'warning');
-                return;
-            }
 
-            const data = [['Waktu Datang', 'Tipe Paket', 'Ukuran (Bytes)']];
-            packetHistory.forEach(entry => {
-                data.push([entry.time, entry.type, entry.sizeBytes]);
-            });
-
-            const wb = XLSX.utils.book_new();
-            const ws = XLSX.utils.aoa_to_sheet(data);
-            
-            // Auto-width kolom
-            ws['!cols'] = [
-                { wch: 15 }, // Waktu Datang
-                { wch: 15 }, // Tipe Paket
-                { wch: 15 }  // Ukuran (Bytes)
-            ];
-
-            XLSX.utils.book_append_sheet(wb, ws, 'Packet Log');
-            XLSX.writeFile(wb, `log_jaringan_${new Date().toISOString().slice(0, 10)}.xlsx`);
-        });
-    }
 
     // --- Tombol tutup alert ---
     dom.alertClose.addEventListener('click', () => {
@@ -1545,17 +1516,9 @@ function initEvents() {
         });
     }
 
-    // --- Jam digital & Hitung Throughput (update setiap detik) ---
+    // --- Jam digital (update setiap detik) ---
     setInterval(() => {
         dom.clock.textContent = new Date().toLocaleTimeString('id-ID', { hour12: false });
-        
-        if (dom.throughputValue) {
-            // Data = byte/detik lalu ubah ke KB/s
-            const kbps = (throughputBytes / 1024);
-            dom.throughputValue.textContent = `${kbps.toFixed(2)} KB/s`;
-
-            throughputBytes = 0; // Reset di akhir detik
-        }
     }, 1000);
 }
 
