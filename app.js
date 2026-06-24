@@ -343,7 +343,12 @@ function verifyWatermark(received, wmData, processed, seq, mode) {
     log.push('='.repeat(50));
 
     // === [0] DATA MASUK — tampilkan seluruh nilai ===
-    log.push(`[0] Data Diterima (Raw ${processed.length}): [${processed.map(x => x.toFixed(2)).join(', ')}]`);
+    log.push(`[0] Data diterima dari pengirim (2 larik, ${received.length} sampel):`);
+    log.push(`  > Data Raw (asli)    : [${received.map(x => x.toFixed(2)).join(', ')}]`);
+    log.push(`  > Data Ber-watermark : [${wmData.map(x => x.toFixed(2)).join(', ')}]`);
+    if (mode !== 'NORMAL') {
+        log.push(`  > Data Simulasi Pengujian (${mode}) : [${processed.map(x => x.toFixed(2)).join(', ')}]`);
+    }
 
     // === HITUNG MSE & PSNR ===
     // Baseline MSE = Raw vs Watermarked
